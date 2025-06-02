@@ -1,0 +1,84 @@
+import streamlit as st
+import requests
+import os
+import uuid
+from io import BytesIO
+
+# Ko-fi donation link
+KO_FI_LINK = "https://ko-fi.com/smartsombie9"
+
+st.set_page_config(page_title="AI Video Generator", layout="centered")
+st.title("🎬 AI Video Generator")
+
+# Session state setup
+if 'api_key' not in st.session_state:
+    st.session_state.api_key = ''
+if 'video_count' not in st.session_state:
+    st.session_state.video_count = 0
+if 'paid_user' not in st.session_state:
+    st.session_state.paid_user = False
+
+# API Key Input
+if not st.session_state.api_key:
+    api_input = st.text_input("🔑 Enter your Runway API key", type="password")
+    if api_input:
+        st.session_state.api_key = api_input
+    st.stop()
+
+# Paywall Check
+if st.session_state.video_count >= 2 and not st.session_state.paid_user:
+    st.warning("🚫 You've used 2 free video generations. Please support this tool to continue.")
+    st.markdown(f"👉 [Buy Me a Coffee to Unlock More]( {KO_FI_LINK} )")
+    if st.button("✅ I've Donated. Unlock More Videos"):
+        st.session_state.paid_user = True
+    st.stop()
+
+# Input Fields
+prompt = st.text_area("🎨 Enter your prompt", height=100)
+model = st.selectbox("🤖 Choose a model", ["gen-2", "motion-brush", "other-model"])
+duration = st.slider("⏱️ Duration (seconds)", min_value=1, max_value=120, value=10)
+
+if st.button("Generate Video"):
+    if not prompt.strip():
+        st.error("Please enter a prompt.")
+        st.stop()
+
+    with st.spinner("Generating video..."):
+        try:
+            video_url = generate_video(prompt, model, duration, st.session_state.api_key)
+            video_data = download_video(video_url)
+            if video_data:
+                st.video(video_data)
+                st.download_button("📥 Download Video", data=video_data, file_name="generated_video.mp4")
+                st.session_state.video_count += 1
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+
+def generate_video(prompt, model, duration, api_key):
+    url = "https://api.runwayml.com/v1/generate"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "prompt": prompt,
+        "duration": duration,
+        "width": 1280,
+        "height": 720,
+        "format": "mp4",
+        "model": model
+    }
+    response = requests.post(url, headers=headers, json=payload)
+    if response.status_code != 200:
+        raise Exception(response.text)
+    result = response.json()
+    return result.get("video_url")
+
+
+def download_video(url):
+    response = requests.get(url)
+    if response.status_code == 200:
+        return BytesIO(response.content)
+    else:
+        raise Exception("Failed to download video.")
